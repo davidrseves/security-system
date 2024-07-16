@@ -6,6 +6,11 @@
 // Wifi
 #include <WiFi.h>
 
+// Camera
+#include "esp_camera.h"
+#include "camera_pins.h"
+
+
 void setup() {
 
   // try catch: si excepcion mensaje de reiniciar y parar todo
@@ -27,16 +32,25 @@ void loop() {
 /*
  * Pre:
  *      - Necesita que tenga conectado el lector de tarjetas micro SD
+ *      - Necesita que tenga conectada la CAMERA_MODEL_AI_THINKER
  * Post:
  *      - Inicializa la comunicación serial a 115200 baudios
- *      - Inicializa la coneción con la tarjeta SD
+ *      - Inicializa la conexión con la tarjeta SD
+ *      - Inicializa la conexión con la cámara
  */
 void initModules() {
 
-  // Iniciar la comunicación serial
+  /*
+   * Iniciar la comunicación serial
+   */
+  
   Serial.begin(115200);
+  Serial.println();
 
-  // Iniciar conexión con la tarjeta SD
+  /*
+   * Iniciar conexión con la tarjeta SD
+   */
+  
   Serial.println("Info: Iniciando conexion con la tarjeta SD");
   if (!SD_MMC.begin("/sdcard", true)) { // true para usar modo 1-bit (más confiable)
     Serial.println("Error: Iniciando conexion con la tarjeta SD");
@@ -44,7 +58,68 @@ void initModules() {
   }
   Serial.println("Info: Conexion con la tarjeta SD iniciada correctamente");
 
-  delay(500); // Esperar para asegurar que se inicia correctamente
+  /*
+   * Iniciar conexión con la cámara
+   */
+
+  camera_config_t config = getCameraConfig();
+
+  Serial.println("Info: Iniciando conexion con la camara");
+  if (esp_camera_init(&config) != ESP_OK) {
+    Serial.println("Error: Iniciando conexion con la camara");
+    //throw std::runtime_error("...");
+  }
+  Serial.println("Info: Conexion con la camara iniciada correctamente");
+
+  // Esperar para asegurar que se inicia correctamente
+  delay(500);
+}
+
+
+/*
+ * Pre: ---
+ * Post:
+ *      - Devuelve la configuración para la CAMERA_MODEL_AI_THINKER
+ */
+camera_config_t getCameraConfig() {
+
+  camera_config_t config;
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  
+  config.frame_size = FRAMESIZE_HD;             // 1280x720
+  //config.frame_size = FRAMESIZE_UXGA;         // 1600x1200
+  
+  config.pixel_format = PIXFORMAT_JPEG;         // For streaming
+  //config.pixel_format = PIXFORMAT_RGB565;     // For face detection/recognition
+
+  //config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // For ensuring every frame is processed
+  config.grab_mode = CAMERA_GRAB_LATEST;        // For capturing the latest image available
+  
+  //config.fb_location = CAMERA_FB_IN_DRAM;     // Frame buffer is placed in internal DRAM
+  config.fb_location = CAMERA_FB_IN_PSRAM;      // Frame buffer is placed in external PSRAM
+
+  config.jpeg_quality = 12;                     // Quality of JPEG output. 0-63 lower means higher quality
+  config.fb_count = 2;                          // Number of frame buffers to be allocated. If more than one, then each frame will be acquired (double speed)
+
+  return config;
 }
 
 
@@ -114,4 +189,7 @@ void connectWiFi() {
     //throw std::runtime_error("...");
   }
 }
+
+
+
 
