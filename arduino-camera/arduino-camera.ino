@@ -10,12 +10,18 @@
 #include "esp_camera.h"
 #include "camera_pins.h"
 
+// JSON
+#include <ArduinoJson.h>
+
 
 void setup() {
 
   // try catch: si excepcion mensaje de reiniciar y parar todo
   initModules();  // Inicializar conexiones con los modulos
-  connectWiFi();  // Iniciar conexión WiFi
+  DynamicJsonDocument configDoc = getConfigObject();  // Obtener config de SD
+  connectWiFi(configDoc["ssid"],  configDoc["password"]); // Conectar WiFi
+  takeAndUploadPhoto(configDoc["serverAddress"], configDoc["serverPort"],
+                                configDoc["serverPath"]); // Tomar y subir foto
 
 }
 
@@ -26,7 +32,7 @@ void loop() {
 
 /*******************************************************************************
  *                           FUNCIONES AUXILIARES                              *
- *******************************************************************************/
+ ******************************************************************************/
 
 
 /*
@@ -52,7 +58,7 @@ void initModules() {
    */
   
   Serial.println("Info: Iniciando conexion con la tarjeta SD");
-  if (!SD_MMC.begin("/sdcard", true)) { // true para usar modo 1-bit (más confiable)
+  if (!SD_MMC.begin("/sdcard", true)) { // true para usar modo más confiable
     Serial.println("Error: Iniciando conexion con la tarjeta SD");
     //throw std::runtime_error("...");
   }
@@ -108,16 +114,16 @@ camera_config_t getCameraConfig() {
   //config.frame_size = FRAMESIZE_UXGA;         // 1600x1200
   
   config.pixel_format = PIXFORMAT_JPEG;         // For streaming
-  //config.pixel_format = PIXFORMAT_RGB565;     // For face detection/recognition
+  //config.pixel_format = PIXFORMAT_RGB565;     // For face recognition
 
-  //config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // For ensuring every frame is processed
-  config.grab_mode = CAMERA_GRAB_LATEST;        // For capturing the latest image available
+  //config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;  // Every frame is processed
+  config.grab_mode = CAMERA_GRAB_LATEST;  // Just the latest frame is processed
   
-  //config.fb_location = CAMERA_FB_IN_DRAM;     // Frame buffer is placed in internal DRAM
-  config.fb_location = CAMERA_FB_IN_PSRAM;      // Frame buffer is placed in external PSRAM
+  //config.fb_location = CAMERA_FB_IN_DRAM; // Frame buffer in internal DRAM
+  config.fb_location = CAMERA_FB_IN_PSRAM;  // Frame buffer in external PSRAM
 
-  config.jpeg_quality = 12;                     // Quality of JPEG output. 0-63 lower means higher quality
-  config.fb_count = 2;                          // Number of frame buffers to be allocated. If more than one, then each frame will be acquired (double speed)
+  config.jpeg_quality = 12; // Quality of JPEG. 0-63 lower means higher quality
+  config.fb_count = 2;  // Number of frame buffers to be allocated
 
   return config;
 }
@@ -125,71 +131,193 @@ camera_config_t getCameraConfig() {
 
 /*
  * Pre:
- *      - Necesita un fichero en la tarjeta SD "/config.txt" que contenga en la
- *        primera línea el ssid del WiFi y en la segunda línea el password
+ *      - Necesita un fichero en la tarjeta SD "/config.json" que contenga la
+ *        configuración necesaria
  * Post:
- *      - Establece la conexión WiFi
+ *      - Devuelve objeto (diccionario) con las configuraciones mapeadas
  */
-void connectWiFi() {
+DynamicJsonDocument getConfigObject() {
 
   /*
-   * Acceso a "/config.txt"
+   * Acceso a "/config.json"
    */
 
-  String ssid, password;
+  String configFileRaw;
 
-  // Leer el fichero /config.txt
-  File configFile = SD_MMC.open("/config.txt"); // Abrir fichero
+  // Leer el fichero /config.json
+  File configFile = SD_MMC.open("/config.json"); // Abrir fichero
   if (!configFile) {
-    Serial.println("Error: Abriendo el fichero /config.txt");
+    Serial.println("Error: Abriendo el fichero /config.json");
     //throw std::runtime_error("...");
   }
 
-  // Leer la primera línea y la guardar en la variable ssid
-  if (configFile.available()) {
-    ssid = configFile.readStringUntil('\n');
-  } else {
-    Serial.println("Error: Leyendo la primera línea del fichero /config.txt ");
-    //throw std::runtime_error("...");
+  // Leer todo el fichero y guardar en configFileRaw
+  while (configFile.available()) {
+    configFileRaw += char(configFile.read());
   }
 
-  // Leer la segunda línea y la guardar en la variable password
-  if (configFile.available()) {
-    password = configFile.readStringUntil('\n');
-  } else {
-    Serial.println("Error: Leyendo la segunda línea del fichero /config.txt ");
-    //throw std::runtime_error("...");
-  }
-
-  Serial.println("Info: Contenido del fichero /config.txt, ssid: " + ssid + ", password: " + password);
+  Serial.println("Info: Contenido del fichero /config.json: " + configFileRaw);
 
   configFile.close(); // Cerrar fichero
 
 
   /*
-   * Establecer conexión WiFi
+   * Mapear JSON a objeto
    */
+
+  // Estimar y reservar tamaño inicial del DynamicJsonDocument
+  const size_t capacity = JSON_OBJECT_SIZE(10) + configFileRaw.length();
+  DynamicJsonDocument doc(1024);  // Si necesita más espacio se auto ajusta
+
+  // Parsear el JSON
+  DeserializationError error = deserializeJson(doc, configFileRaw);
+
+  // Verifica si hubo un error durante el parseo
+  if (error) {
+    Serial.println("Error: Parseando JSON de configuración, "
+                                                      + String(error.c_str()));
+    //throw std::runtime_error("...");
+  }
+
+  return doc; // Devuelve el documento JSON mapeado
+}
+
+
+/*
+ * Pre:
+ *      - Necesita los strings ssid y password del wifi
+ * Post:
+ *      - Establece la conexión WiFi
+ */
+void connectWiFi(const String ssid, const String password) {
+
+  // Comporbar parámetros
+  if (ssid == "null" || password == "null") { // Devuelve "null" en vez de NULL
+    Serial.println("Error: Parametros sin configurar: ssid o password");
+    //throw std::runtime_error("...");
+  }
 
   WiFi.begin(ssid, password);
   //WiFi.setSleep(false); // Mantener siempre activo
 
-  Serial.println("Info: Intentando establecer conexión WiFi");
+  Serial.println("Info: Estableciendo conexión WiFi");
 
   // Intentos para establecer conexión WiFi (máximo 5 intentos)
-  for (unsigned int i = 0; i < 5 && WiFi.status() != WL_CONNECTED; i++) {
-    Serial.println("Info: Fallo en la conexión WiFi. Reintentando...");
+  for (unsigned int i = 0; i < 10 && WiFi.status() != WL_CONNECTED; i++) {
+    Serial.println("Info: Fallo en la conexión WiFi. Reintentando");
     delay(500); // Esperar 500 ms antes de volver a intentar
   }
 
   // Verificar si se estableció la conexión WiFi
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("Info: WiFi conectado, con IP asignada: " + WiFi.localIP().toString());
+    Serial.println("Info: WiFi conectado, con IP asignada: "
+                                                  + WiFi.localIP().toString());
   } else {  // Si no se ha podido establecer conexión
     Serial.println("Error: No se pudo establecer conexión WiFi");
     //throw std::runtime_error("...");
   }
 }
 
+
+/*
+ * Pre:
+ *      - Necesita haber inicializado la cámara
+ *      - Necesita los strings de configuración del servidor
+ * Post:
+ *      - Captura una foto y la envía al servidor mediante HTTP POST en
+ *        el campo "imageFile"
+ */
+void takeAndUploadPhoto(const String serverAddress, const String serverPort,
+                                                      const String serverPath) {
+
+  // Comporbar parámetros
+  // Devuelve "null" en vez de NULL
+  if (serverAddress == "null" || serverPort == "null" || serverPath == "null") {
+    Serial.print("Error: Parametros sin configurar: serverAddress ");
+    Serial.println("o serverPort o serverPath");
+    //throw std::runtime_error("...");
+  }
+
+  /*
+   * Capturar una imagen
+   */
+  
+  Serial.println("Info: Capturando foto");
+  camera_fb_t* fb = esp_camera_fb_get();;   // Puntero que apunta al buffer
+  if (!fb) {
+    Serial.println("Error: No se pudo capturar la foto");
+    esp_camera_fb_return(fb); // Liberar buffer de cámara
+    //throw std::runtime_error("...");
+  }
+  Serial.println("Info: Foto capturada correctamente");
+
+
+  /*
+   * Enviar foto al endpoint
+   */
+
+  WiFiClient client;
+
+  if (client.connect(serverAddress.c_str(), serverPort.toInt())) {
+    Serial.println("Info: Conectado con el servidor: " + serverAddress);
+    
+    // Preparar encabezados y cuerpo de la solicitud
+    String head = "--davidrseves\r\nContent-Disposition: form-data; name=\"imageFile\"; filename=\"esp32-cam.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
+    String tail = "\r\n--davidrseves--\r\n";
+    
+    // Enviar solicitud HTTP POST
+    client.println("POST " + serverPath + " HTTP/1.1");
+    client.println("Host: " + serverAddress);
+    client.println("Content-Length: " + String(fb->len + head.length() + tail.length()));
+    client.println("Content-Type: multipart/form-data; boundary=davidrseves");
+    client.println();
+    client.print(head);
+
+
+    // Enviar datos de la imagen en bloques de 1024 bytes
+    uint8_t* fbBuf = fb->buf;  // Puntero al inicio del buffer de la imagen
+    size_t fbLen = fb->len;    // Longitud total de los datos de la imagen
+    size_t blockSize = 1024;   // Tamaño del bloque en bytes
+
+    // Iterar a través de los datos de la imagen en bloques de 1024 bytes
+    for (size_t n = 0; n < fbLen; n += blockSize) {
+      // Calcular el tamaño del bloque actual
+      size_t currentBlockSize = (n + blockSize < fbLen) ? blockSize : fbLen - n;
+
+      // Enviar el bloque actual al cliente
+      client.write(fbBuf + n, currentBlockSize);
+    }
+
+    client.print(tail);
+    
+    esp_camera_fb_return(fb); // Liberar buffer de cámara
+    
+    // Leer respuesta del servidor
+    int timeoutTimer = 10000; // 10 segundos
+    long startTimer = millis();
+    boolean state = false;  // Para empezar a capturar el body de la respuesta
+    String getAll;
+    String getBody;
+    
+    while (!(getBody.length() > 0) && ((startTimer + timeoutTimer) > millis())) {
+      while (client.available()) {
+        char c = client.read();
+        if (c == '\n') {
+          if (getAll.length() == 0) { state = true; }
+          getAll = "";
+        } else if (c != '\r') { getAll += String(c); }
+        if (state == true) { getBody += String(c); }
+        startTimer = millis();  // Reiniciar el temporizador
+      }
+    }
+    client.stop();
+    Serial.println("Info: HTTP Response: " + getBody);
+
+  } else {
+    Serial.println("Error: Conectando con el servidor: " + serverAddress);
+    //throw std::runtime_error("...");
+  }
+}
 
 
 
