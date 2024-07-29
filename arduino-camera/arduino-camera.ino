@@ -197,12 +197,12 @@ DynamicJsonDocument getConfigObject() {
 
   // Wifi
   if (doc["ssid"].isNull() || doc["password"].isNull()) {
-    throw std::runtime_error("Error: Parametros sin configurar: ssid o password");
+    throw std::runtime_error("Error: Parametro sin configurar: ssid o password");
   }
 
   // Server
   if (doc["serverAddress"].isNull() || doc["serverPort"].isNull() || doc["serverPath"].isNull()) {
-    throw std::runtime_error("Error: Parametros sin configurar: serverAddress o serverPort o serverPath");
+    throw std::runtime_error("Error: Parametro sin configurar: serverAddress o serverPort o serverPath");
   }
 
   // Sleep or capture interval
