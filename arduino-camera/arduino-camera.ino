@@ -1,29 +1,30 @@
-// Micro SD
-#include "FS.h"
+
+#include "FS.h"           // Micro SD
 #include "SD_MMC.h"
 #include "SPI.h"
-
-// Wifi
-#include <WiFi.h>
-
-// Camera
-#include "esp_camera.h"
+#include <WiFi.h>         // Wifi
+#include "esp_camera.h"   // Camera
 #include "camera_pins.h"
-
-// JSON
-#include <ArduinoJson.h>
+#include <ArduinoJson.h>  // JSON
+#include <stdexcept>      // Excepciones
+#include <esp_sleep.h>    // Modo bajo consumo
 
 
 void setup() {
-
-  // try catch: si excepcion mensaje de reiniciar y parar todo
-  initModules();  // Inicializar conexiones con los modulos
-  DynamicJsonDocument configDoc = getConfigObject();  // Obtener config de SD
-  connectWiFi(configDoc["ssid"],  configDoc["password"]); // Conectar WiFi
-  takeAndUploadPhoto(configDoc["serverAddress"], configDoc["serverPort"],
+  try {
+    initModules();  // Inicializar conexiones con los modulos
+    DynamicJsonDocument configDoc = getConfigObject();  // Obtener config de SD
+    connectWiFi(configDoc["ssid"],  configDoc["password"]); // Conectar WiFi
+    takeAndUploadPhoto(configDoc["serverAddress"], configDoc["serverPort"],
                                 configDoc["serverPath"]); // Tomar y subir foto
+  } catch (const std::runtime_error &e) {
+    Serial.println(e.what());
+    Serial.println("Reinicie el dispoitivo");
+    esp_deep_sleep_start(); // Modo de sueño profundo
 
+  }
 }
+
 
 void loop() {
 
@@ -43,6 +44,8 @@ void loop() {
  *      - Inicializa la comunicación serial a 115200 baudios
  *      - Inicializa la conexión con la tarjeta SD
  *      - Inicializa la conexión con la cámara
+ * Throws:
+ *      - std::runtime_error si hay algún error, sin solución
  */
 void initModules() {
 
@@ -59,8 +62,7 @@ void initModules() {
   
   Serial.println("Info: Iniciando conexion con la tarjeta SD");
   if (!SD_MMC.begin("/sdcard", true)) { // true para usar modo más confiable
-    Serial.println("Error: Iniciando conexion con la tarjeta SD");
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: Iniciando conexion con la tarjeta SD");
   }
   Serial.println("Info: Conexion con la tarjeta SD iniciada correctamente");
 
@@ -72,8 +74,7 @@ void initModules() {
 
   Serial.println("Info: Iniciando conexion con la camara");
   if (esp_camera_init(&config) != ESP_OK) {
-    Serial.println("Error: Iniciando conexion con la camara");
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: Iniciando conexion con la camara");
   }
   Serial.println("Info: Conexion con la camara iniciada correctamente");
 
@@ -135,6 +136,8 @@ camera_config_t getCameraConfig() {
  *        configuración necesaria
  * Post:
  *      - Devuelve objeto (diccionario) con las configuraciones mapeadas
+ * Throws:
+ *      - std::runtime_error si hay algún error, sin solución
  */
 DynamicJsonDocument getConfigObject() {
 
@@ -147,8 +150,7 @@ DynamicJsonDocument getConfigObject() {
   // Leer el fichero /config.json
   File configFile = SD_MMC.open("/config.json"); // Abrir fichero
   if (!configFile) {
-    Serial.println("Error: Abriendo el fichero /config.json");
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: Abriendo el fichero /config.json");
   }
 
   // Leer todo el fichero y guardar en configFileRaw
@@ -174,9 +176,7 @@ DynamicJsonDocument getConfigObject() {
 
   // Verifica si hubo un error durante el parseo
   if (error) {
-    Serial.println("Error: Parseando JSON de configuración, "
-                                                      + String(error.c_str()));
-    //throw std::runtime_error("...");
+    throw std::runtime_error(std::string("Error: Parseando JSON de configuración, ") + error.c_str());
   }
 
   return doc; // Devuelve el documento JSON mapeado
@@ -188,13 +188,14 @@ DynamicJsonDocument getConfigObject() {
  *      - Necesita los strings ssid y password del wifi
  * Post:
  *      - Establece la conexión WiFi
+ * Throws:
+ *      - std::runtime_error si hay algún error, sin solución
  */
 void connectWiFi(const String ssid, const String password) {
 
   // Comporbar parámetros
   if (ssid == "null" || password == "null") { // Devuelve "null" en vez de NULL
-    Serial.println("Error: Parametros sin configurar: ssid o password");
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: Parametros sin configurar: ssid o password");
   }
 
   WiFi.begin(ssid, password);
@@ -213,8 +214,7 @@ void connectWiFi(const String ssid, const String password) {
     Serial.println("Info: WiFi conectado, con IP asignada: "
                                                   + WiFi.localIP().toString());
   } else {  // Si no se ha podido establecer conexión
-    Serial.println("Error: No se pudo establecer conexión WiFi");
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: No se pudo establecer conexión WiFi");
   }
 }
 
@@ -226,6 +226,8 @@ void connectWiFi(const String ssid, const String password) {
  * Post:
  *      - Captura una foto y la envía al servidor mediante HTTP POST en
  *        el campo "imageFile"
+ * Throws:
+ *      - std::runtime_error si hay algún error, sin solución
  */
 void takeAndUploadPhoto(const String serverAddress, const String serverPort,
                                                       const String serverPath) {
@@ -233,9 +235,7 @@ void takeAndUploadPhoto(const String serverAddress, const String serverPort,
   // Comporbar parámetros
   // Devuelve "null" en vez de NULL
   if (serverAddress == "null" || serverPort == "null" || serverPath == "null") {
-    Serial.print("Error: Parametros sin configurar: serverAddress ");
-    Serial.println("o serverPort o serverPath");
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: Parametros sin configurar: serverAddress o serverPort o serverPath");
   }
 
   /*
@@ -245,9 +245,8 @@ void takeAndUploadPhoto(const String serverAddress, const String serverPort,
   Serial.println("Info: Capturando foto");
   camera_fb_t* fb = esp_camera_fb_get();;   // Puntero que apunta al buffer
   if (!fb) {
-    Serial.println("Error: No se pudo capturar la foto");
     esp_camera_fb_return(fb); // Liberar buffer de cámara
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: No se pudo capturar la foto");
   }
   Serial.println("Info: Foto capturada correctamente");
 
@@ -258,8 +257,9 @@ void takeAndUploadPhoto(const String serverAddress, const String serverPort,
 
   WiFiClient client;
 
+  Serial.println("Info: Conectado con el servidor: " + serverAddress + ":"
+                                                    + serverPort + serverPath);
   if (client.connect(serverAddress.c_str(), serverPort.toInt())) {
-    Serial.println("Info: Conectado con el servidor: " + serverAddress);
     
     // Preparar encabezados y cuerpo de la solicitud
     String head = "--davidrseves\r\nContent-Disposition: form-data; name=\"imageFile\"; filename=\"esp32-cam.jpg\"\r\nContent-Type: image/jpeg\r\n\r\n";
@@ -314,8 +314,7 @@ void takeAndUploadPhoto(const String serverAddress, const String serverPort,
     Serial.println("Info: HTTP Response: " + getBody);
 
   } else {
-    Serial.println("Error: Conectando con el servidor: " + serverAddress);
-    //throw std::runtime_error("...");
+    throw std::runtime_error("Error: Conectando con el servidor");
   }
 }
 
