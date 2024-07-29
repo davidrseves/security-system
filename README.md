@@ -4,7 +4,7 @@ Proyecto de código abierto (Licencia GPL).
 
 ## Resumen
 
-Este proyecto se está desarrollando para crear un sistema de seguridad.
+Este proyecto se está desarrollando para crear un sistema de seguridad de código abierto.
 
 ## Componentes
 
@@ -22,7 +22,8 @@ Ejemplo de `config.json`:
   "password": "myWifiPassword",
   "serverAddress": "192.168.0.18",
   "serverPort": "8080",
-  "serverPath": "/upload"
+  "serverPath": "/upload",
+  "captureInterval": "5000"
 }
 ```
 
@@ -38,7 +39,7 @@ Ejemplo de `config.json`:
 
 ### 1. Hacer Funcionar lo Básico
 
-- [ ] Primera implementación de la cámara, que suba imágenes sin autenticación y sin seguridad.
+- [x] Primera implementación de la cámara, que suba imágenes sin autenticación y sin seguridad.
 - [ ] Primera implementación del backend, que guarde las imágenes y las sirva en un endpoint.
 
 ### 2. Añadir Autenticación y Seguridad
