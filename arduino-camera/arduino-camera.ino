@@ -37,7 +37,7 @@ void loop() {
     
   } catch (const std::runtime_error &e) {
     Serial.println(e.what());
-    Serial.println("Reinicie el dispoitivo");
+    Serial.println("Info: Reinicie el dispoitivo");
     goToSleep(); // Modo de dormir profundo
 
   }
