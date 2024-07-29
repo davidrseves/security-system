@@ -1,3 +1,11 @@
+/******************************************************************************\
+* Archivo: arduino-camera.ino                                                  *
+* Fecha: Julio 2024                                                            *
+* Autor: davidrseves                                                           *
+* Repositorio:https://github.com/davidrseves/security-system                   *
+* Descripción: Este archivo contiene el código fuente para la cámara           *
+\******************************************************************************/
+
 
 #include "FS.h"           // Micro SD
 #include "SD_MMC.h"
