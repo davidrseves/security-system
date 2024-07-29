@@ -2,7 +2,7 @@
 * Archivo: arduino-camera.ino                                                  *
 * Fecha: Julio 2024                                                            *
 * Autor: davidrseves                                                           *
-* Repositorio:https://github.com/davidrseves/security-system                   *
+* Repositorio: https://github.com/davidrseves/security-system                  *
 * Descripción: Este archivo contiene el código fuente para la cámara           *
 \******************************************************************************/
 
@@ -15,27 +15,32 @@
 #include "camera_pins.h"
 #include <ArduinoJson.h>  // JSON
 #include <stdexcept>      // Excepciones
-#include <esp_sleep.h>    // Modo bajo consumo
 
 
-void setup() {
-  try {
-    initModules();  // Inicializar conexiones con los modulos
-    DynamicJsonDocument configDoc = getConfigObject();  // Obtener config de SD
-    connectWiFi(configDoc["ssid"],  configDoc["password"]); // Conectar WiFi
-    takeAndUploadPhoto(configDoc["serverAddress"], configDoc["serverPort"],
-                                configDoc["serverPath"]); // Tomar y subir foto
-  } catch (const std::runtime_error &e) {
-    Serial.println(e.what());
-    Serial.println("Reinicie el dispoitivo");
-    esp_deep_sleep_start(); // Modo de sueño profundo
-
-  }
-}
+void setup() {}
 
 
 void loop() {
+  
+  try {
 
+    initModules();  // Inicializar conexiones con los modulos
+    DynamicJsonDocument configDoc = getConfigObject();  // Obtener config de SD
+    connectWiFi(configDoc["ssid"],  configDoc["password"]); // Conectar WiFi
+
+    while (true) {
+      takeAndUploadPhoto(configDoc["serverAddress"], configDoc["serverPort"],
+                                configDoc["serverPath"]); // Tomar y subir foto
+
+      goToSleep(configDoc["captureInterval"].as<int>());  // Duerme ms
+    }
+    
+  } catch (const std::runtime_error &e) {
+    Serial.println(e.what());
+    Serial.println("Reinicie el dispoitivo");
+    goToSleep(); // Modo de dormir profundo
+
+  }
 }
 
 
@@ -166,9 +171,8 @@ DynamicJsonDocument getConfigObject() {
     configFileRaw += char(configFile.read());
   }
 
-  Serial.println("Info: Contenido del fichero /config.json: " + configFileRaw);
-
   configFile.close(); // Cerrar fichero
+  Serial.println("Info: Contenido del fichero /config.json: " + configFileRaw);
 
 
   /*
@@ -176,7 +180,6 @@ DynamicJsonDocument getConfigObject() {
    */
 
   // Estimar y reservar tamaño inicial del DynamicJsonDocument
-  const size_t capacity = JSON_OBJECT_SIZE(10) + configFileRaw.length();
   DynamicJsonDocument doc(1024);  // Si necesita más espacio se auto ajusta
 
   // Parsear el JSON
@@ -187,7 +190,27 @@ DynamicJsonDocument getConfigObject() {
     throw std::runtime_error(std::string("Error: Parseando JSON de configuración, ") + error.c_str());
   }
 
-  return doc; // Devuelve el documento JSON mapeado
+
+  /*
+   * Comporbar parámetros obligatorios
+   */
+
+  // Wifi
+  if (doc["ssid"].isNull() || doc["password"].isNull()) {
+    throw std::runtime_error("Error: Parametros sin configurar: ssid o password");
+  }
+
+  // Server
+  if (doc["serverAddress"].isNull() || doc["serverPort"].isNull() || doc["serverPath"].isNull()) {
+    throw std::runtime_error("Error: Parametros sin configurar: serverAddress o serverPort o serverPath");
+  }
+
+  // Sleep or capture interval
+  if (doc["captureInterval"].isNull()) {
+    throw std::runtime_error("Error: Parametro sin configurar: captureInterval");
+  }
+
+  return doc; // Devuelve el documento JSON mapeado en un diccionario
 }
 
 
@@ -200,11 +223,6 @@ DynamicJsonDocument getConfigObject() {
  *      - std::runtime_error si hay algún error, sin solución
  */
 void connectWiFi(const String ssid, const String password) {
-
-  // Comporbar parámetros
-  if (ssid == "null" || password == "null") { // Devuelve "null" en vez de NULL
-    throw std::runtime_error("Error: Parametros sin configurar: ssid o password");
-  }
 
   WiFi.begin(ssid, password);
   //WiFi.setSleep(false); // Mantener siempre activo
@@ -239,12 +257,6 @@ void connectWiFi(const String ssid, const String password) {
  */
 void takeAndUploadPhoto(const String serverAddress, const String serverPort,
                                                       const String serverPath) {
-
-  // Comporbar parámetros
-  // Devuelve "null" en vez de NULL
-  if (serverAddress == "null" || serverPort == "null" || serverPath == "null") {
-    throw std::runtime_error("Error: Parametros sin configurar: serverAddress o serverPort o serverPath");
-  }
 
   /*
    * Capturar una imagen
@@ -323,6 +335,35 @@ void takeAndUploadPhoto(const String serverAddress, const String serverPort,
 
   } else {
     throw std::runtime_error("Error: Conectando con el servidor");
+  }
+}
+
+
+/*
+ * Pre:
+ *      - Necesita el tiempo de dormir en milisegundos
+ * Post:
+ *      - Programa el temporizador y entra en modo de dormir ligero
+ */
+void goToSleep(int sleepTime) {
+
+  Serial.println("Info: Durmiendo por " + String(sleepTime) + " ms");
+  delay(sleepTime);
+  Serial.println("Info: Despertando del modo dormir ligero");
+}
+
+
+/*
+ * Pre: ---
+ * Post:
+ *      - Entra en modo de dormir profundo indefinidamente
+ */
+void goToSleep() {
+
+  Serial.println("Info: Entrando en modo de dormir profundo indefinidamente");
+
+  while (true) {
+    delay(1000000);
   }
 }
 
